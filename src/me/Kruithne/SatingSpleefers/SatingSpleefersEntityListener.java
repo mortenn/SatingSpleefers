@@ -1,9 +1,10 @@
 package me.Kruithne.SatingSpleefers;
 
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
+
+import com.sk89q.worldedit.bukkit.selections.CuboidSelection;
 
 public class SatingSpleefersEntityListener implements Listener
 {
@@ -18,19 +19,14 @@ public class SatingSpleefersEntityListener implements Listener
 	@EventHandler
 	public void onEntityDamage(EntityDamageEvent event)
 	{
-		try
+		if (event.getEntity().getWorld() == this.rPlugin.spleefArena_L1.getWorld())
 		{
-			if (event.getEntity() instanceof Player)
+			CuboidSelection arena = new CuboidSelection(this.rPlugin.spleefBounds_1.getWorld(), this.rPlugin.spleefBounds_1, this.rPlugin.spleefBounds_2);
+			
+			if (arena.contains(event.getEntity().getLocation())) // Inside arena before a game started.
 			{
-				if (event.getEntity().getWorld() == this.rPlugin.spleefArena_L1.getWorld())
-				{
-					event.setCancelled(true);
-				}
+				event.setCancelled(true);	
 			}
-		}
-		catch (NullPointerException e)
-		{
-			//do do do 
 		}
 	}
 	

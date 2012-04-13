@@ -4,12 +4,13 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.ConcurrentModificationException;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.bukkit.ChatColor;
-import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Server;
@@ -81,20 +82,38 @@ public class SatingSpleefers extends JavaPlugin {
 	public Location spleefGreenGate_L1 = null;
 	public Location spleefGreenGate_L2 = null;
 	
+	public Location spleefFloorTrapRed_L1 = null;
+	public Location spleefFloorTrapRed_L2 = null;
+	
+	public Location spleefFloorTrapBlue_L1 = null;
+	public Location spleefFloorTrapBlue_L2 = null;
+	
+	public Location spleefFloorTrapGreen_L1 = null;
+	public Location spleefFloorTrapGreen_L2 = null;
+	
+	public Location spleefFloorTrapYellow_L1 = null;
+	public Location spleefFloorTrapYellow_L2 = null;
+	
 	public Location spleefLatestWinsSign = null;
 	public Location spleefScoreBoardSign = null;
 	public Location spleefScoreBoardSignExtra = null;
+	public Location spleefGetScoreSign = null;
 	
 	public Location spleefSpectatorRed = null;
 	public Location spleefSpectatorBlue = null;
 	public Location spleefSpectatorYellow = null;
 	public Location spleefSpectatorGreen = null;
 	
+	public Location spleefBounds_1 = null;
+	public Location spleefBounds_2 = null;
+	
 	public List<Location> spleefedBlocks = new ArrayList<Location>();
 	
 	public List<Location> spleefGateBlocks_Layer1 = new ArrayList<Location>();
 	public List<Location> spleefGateBlocks_Layer2 = new ArrayList<Location>();
 	public List<Location> spleefGateBlocks_Layer3 = new ArrayList<Location>();
+	
+	public List<Integer> spleefOPs = new ArrayList<Integer>();
 	
 	public boolean gameInProgress = false;
 	public boolean gameStarting = false;
@@ -104,11 +123,15 @@ public class SatingSpleefers extends JavaPlugin {
     private String user = null;
     private String password = null;
 	
-	public Debugging debugger = new Debugging();
+	public Debugging debugger = new Debugging(log);
 	
-	public List<Player> currentPlayers = new ArrayList<Player>();
+	public List<Integer> currentPlayers = new ArrayList<Integer>();
 	
-	private DatabaseConnection database = null;
+	public HashMap<Integer, Integer> playerBreakCount = new HashMap<Integer, Integer>();
+	public int MAX_BLOCK_BREAKS = 15;
+	public int SUSPECT_HACK_BLOCK_COUNT = 15;
+	
+	public DatabaseConnection database = null;
 	
 	@SuppressWarnings("unused")
 	private SatingSpleefersPlayerListener pListener = null;
@@ -147,6 +170,31 @@ public class SatingSpleefers extends JavaPlugin {
 		this.database.establishConnection();
 		
 		this.rebuildFloor();
+	}
+	
+	private void checkBlockBreaks()
+	{
+		this.playerBreakCount.clear();
+	}
+	
+	boolean canBreakBlocks(Player thePlayer)
+	{
+		if (this.playerBreakCount.containsKey(thePlayer.getEntityId()) && this.preGame == false)
+		{
+			if (this.playerBreakCount.get(thePlayer.getEntityId()) >= this.MAX_BLOCK_BREAKS)
+				return false;
+		}
+		return true;
+	}
+	
+	public boolean isSuspectedOfHacking(Player thePlayer)
+	{
+		if (this.playerBreakCount.containsKey(thePlayer.getEntityId()))
+		{
+			if (this.playerBreakCount.get(thePlayer.getEntityId()) > this.SUSPECT_HACK_BLOCK_COUNT)
+				return true;
+		}
+		return false;
 	}
 	
 	private WorldEditPlugin getWorldEdit()
@@ -202,6 +250,7 @@ public class SatingSpleefers extends JavaPlugin {
 	public void pulse()
 	{
 		checkInvalidLocations();
+		checkBlockBreaks();
 		
 		if (!this.gameInProgress && !this.gameStarting)
 		{
@@ -212,16 +261,19 @@ public class SatingSpleefers extends JavaPlugin {
 				try
 				{
 					List<Player> worldPlayers = spleefArena_L1.getWorld().getPlayers();
+			    	Iterator<Player> worldPlayersIterator = worldPlayers.iterator();
 			    	
-			    	if (!worldPlayers.isEmpty())
+			    	while (worldPlayersIterator.hasNext())
 			    	{
-			    		worldPlayerCount = worldPlayers.size();
+			    		CuboidSelection arena = new CuboidSelection(this.spleefBounds_1.getWorld(), this.spleefBounds_1, this.spleefBounds_2);
+			    		Player thePlayer = worldPlayersIterator.next();
+						
+						if (arena.contains(thePlayer.getLocation()) && !isSpleefOp(thePlayer)) // Inside arena before a game started.
+							worldPlayerCount++;
 			    	}
 			    	
 			    	if (worldPlayerCount > 1)
-			    	{
 			    		this.initGame();
-			    	}
 				}
 				catch (ConcurrentModificationException e)
 				{
@@ -231,9 +283,7 @@ public class SatingSpleefers extends JavaPlugin {
 		}
 		
 		if (this.gameInProgress && !this.preGame)
-		{
 			checkGameProgress();
-		}
 	}
 
 	public void checkGameProgress()
@@ -250,7 +300,7 @@ public class SatingSpleefers extends JavaPlugin {
     			Player thePlayer = worldPlayers.get(i);
     			
     			CuboidSelection theArena = new CuboidSelection(thePlayer.getWorld(), this.spleefArena_L1, this.spleefArena_L2);
-    			if (theArena.contains(thePlayer.getLocation()))
+    			if (theArena.contains(thePlayer.getLocation()) && !isSpleefOp(thePlayer))
     			{
     				lastManStanding = thePlayer;
     				playerCount++;
@@ -268,7 +318,7 @@ public class SatingSpleefers extends JavaPlugin {
     	{
     		if (lastManStanding != null)
     		{
-    			if (this.currentPlayers.contains(lastManStanding))
+    			if (this.currentPlayers.contains(lastManStanding.getEntityId()))
     			{
     				this.debugger.debug(Constants.debug_matchWon);
     				this.spleefGlobalCast(String.format(Constants.spleefCastWinner, lastManStanding.getName()));
@@ -380,21 +430,24 @@ public class SatingSpleefers extends JavaPlugin {
     			CuboidSelection yellowPad = new CuboidSelection(thePlayer.getWorld(), this.spleefPadYellow_L1, this.spleefPadYellow_L2);
     			CuboidSelection greenPad = new CuboidSelection(thePlayer.getWorld(), this.spleefPadGreen_L1, this.spleefPadGreen_L2);
     			
-    			if (redPad.contains(thePlayer.getLocation()))
+    			if (!isSpleefOp(thePlayer))
     			{
-    				awaitingPlayers++;
-    			}
-    			else if (bluePad.contains(thePlayer.getLocation()))
-    			{
-    				awaitingPlayers++;
-    			}
-    			else if (yellowPad.contains(thePlayer.getLocation()))
-    			{
-    				awaitingPlayers++;
-    			}
-    			else if (greenPad.contains(thePlayer.getLocation()))
-    			{
-    				awaitingPlayers++;
+	    			if (redPad.contains(thePlayer.getLocation()))
+	    			{
+	    				awaitingPlayers++;
+	    			}
+	    			else if (bluePad.contains(thePlayer.getLocation()))
+	    			{
+	    				awaitingPlayers++;
+	    			}
+	    			else if (yellowPad.contains(thePlayer.getLocation()))
+	    			{
+	    				awaitingPlayers++;
+	    			}
+	    			else if (greenPad.contains(thePlayer.getLocation()))
+	    			{
+	    				awaitingPlayers++;
+	    			}
     			}
     		}
     	}
@@ -418,29 +471,32 @@ public class SatingSpleefers extends JavaPlugin {
     			CuboidSelection yellowPad = new CuboidSelection(thePlayer.getWorld(), this.spleefPadYellow_L1, this.spleefPadYellow_L2);
     			CuboidSelection greenPad = new CuboidSelection(thePlayer.getWorld(), this.spleefPadGreen_L1, this.spleefPadGreen_L2);
     			
-    			if (redPad.contains(playerLocation))
+    			if (!isSpleefOp(thePlayer))
     			{
-    				thePlayer.teleport(this.spleefRedRoomPort);
-    				this.currentPlayers.add(thePlayer);
-    				this.debugger.debug("ADDING PLAYER TO MATCH LIST " + thePlayer.getName());
-    			}
-    			else if (bluePad.contains(playerLocation))
-    			{
-    				thePlayer.teleport(this.spleefBlueRoomPort);
-    				this.currentPlayers.add(thePlayer);
-    				this.debugger.debug("ADDING PLAYER TO MATCH LIST " + thePlayer.getName());
-    			}
-    			else if (yellowPad.contains(playerLocation))
-    			{
-    				thePlayer.teleport(this.spleefYellowRoomPort);
-    				this.currentPlayers.add(thePlayer);
-    				this.debugger.debug("ADDING PLAYER TO MATCH LIST " + thePlayer.getName());
-    			}
-    			else if (greenPad.contains(playerLocation))
-    			{
-    				thePlayer.teleport(this.spleefGreenRoomPort);
-    				this.currentPlayers.add(thePlayer);
-    				this.debugger.debug("ADDING PLAYER TO MATCH LIST " + thePlayer.getName());
+	    			if (redPad.contains(playerLocation))
+	    			{
+	    				thePlayer.teleport(this.spleefRedRoomPort);
+	    				this.currentPlayers.add(thePlayer.getEntityId());
+	    				this.debugger.debug("ADDING PLAYER TO MATCH LIST " + thePlayer.getName());
+	    			}
+	    			else if (bluePad.contains(playerLocation))
+	    			{
+	    				thePlayer.teleport(this.spleefBlueRoomPort);
+	    				this.currentPlayers.add(thePlayer.getEntityId());
+	    				this.debugger.debug("ADDING PLAYER TO MATCH LIST " + thePlayer.getName());
+	    			}
+	    			else if (yellowPad.contains(playerLocation))
+	    			{
+	    				thePlayer.teleport(this.spleefYellowRoomPort);
+	    				this.currentPlayers.add(thePlayer.getEntityId());
+	    				this.debugger.debug("ADDING PLAYER TO MATCH LIST " + thePlayer.getName());
+	    			}
+	    			else if (greenPad.contains(playerLocation))
+	    			{
+	    				thePlayer.teleport(this.spleefGreenRoomPort);
+	    				this.currentPlayers.add(thePlayer.getEntityId());
+	    				this.debugger.debug("ADDING PLAYER TO MATCH LIST " + thePlayer.getName());
+	    			}
     			}
     		}
     	}
@@ -454,8 +510,15 @@ public class SatingSpleefers extends JavaPlugin {
     	{
     		for (int i = 0; i < worldPlayers.size(); i++)
     		{
+    			
     			Player thePlayer = worldPlayers.get(i);
-    			thePlayer.sendMessage(ChatColor.GOLD + message);
+    			
+    			CuboidSelection arena = new CuboidSelection(this.spleefBounds_1.getWorld(), this.spleefBounds_1, this.spleefBounds_2);
+    			
+    			if (arena.contains(thePlayer.getLocation())) // Inside arena before a game started.
+    			{
+    				thePlayer.sendMessage(ChatColor.GOLD + message);;	
+    			}
     		}
     	}
 	}
@@ -463,6 +526,14 @@ public class SatingSpleefers extends JavaPlugin {
 	public void spleefGlobalCast(String message)
 	{
 		this.server.broadcastMessage(Constants.pluginOutputTag + ": " + ChatColor.GOLD + message);
+	}
+	
+	public boolean isSpleefOp(Player player)
+	{
+		if (this.spleefOPs.contains(player.getEntityId()))
+			return true;
+		
+		return false;
 	}
 	
 	public boolean onCommand(CommandSender sender, Command cmd, String commandLabel, String[] args)
@@ -476,238 +547,312 @@ public class SatingSpleefers extends JavaPlugin {
 					if (sender.hasPermission(Constants.permissionAdmin))
 					{
 						Player commandPlayer = (Player) sender;
-						if (args[0].equalsIgnoreCase("setarena"))
+						
+						if (args[0].equalsIgnoreCase("op"))
 						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							if (playerSelection != null)
+							if (this.spleefOPs.contains(commandPlayer.getEntityId()))
 							{
-								this.spleefArena_L1 = playerSelection.getMaximumPoint();
-								this.spleefArena_L2 = playerSelection.getMinimumPoint();
-								
-								this.writeConfiguration();
-								this.outputToPlayer(Constants.commandNotice_arenaSet, commandPlayer);
+								this.spleefOPs.remove((Object) commandPlayer.getEntityId());
 							}
-						}
-						else if (args[0].equalsIgnoreCase("setnet"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							if (playerSelection != null)
+							else
 							{
-								this.spleefDropNet_L1 = playerSelection.getMaximumPoint();
-								this.spleefDropNet_L2 = playerSelection.getMinimumPoint();
-								
-								this.writeConfiguration();
-								this.outputToPlayer(Constants.commandNotice_netSet, commandPlayer);
+								this.spleefOPs.add(commandPlayer.getEntityId());
 							}
-						}
-						else if (args[0].equalsIgnoreCase("setredgate"))
+						}						
+						else if (this.isSpleefOp(commandPlayer))
 						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefRedGate_L1 = playerSelection.getMaximumPoint();
-							this.spleefRedGate_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_gateSet, "red"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setbluegate"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefBlueGate_L1 = playerSelection.getMaximumPoint();
-							this.spleefBlueGate_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_gateSet, "red"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setyellowgate"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefYellowGate_L1 = playerSelection.getMaximumPoint();
-							this.spleefYellowGate_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_gateSet, "red"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setgreengate"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefGreenGate_L1 = playerSelection.getMaximumPoint();
-							this.spleefGreenGate_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_gateSet, "red"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setredpad"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefPadRed_L1 = playerSelection.getMaximumPoint();
-							this.spleefPadRed_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_padSet, "red"), commandPlayer);
-							
-						}
-						else if (args[0].equalsIgnoreCase("setbluepad"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefPadBlue_L1 = playerSelection.getMaximumPoint();
-							this.spleefPadBlue_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_padSet, "blue"), commandPlayer);
-							
-						}
-						else if (args[0].equalsIgnoreCase("setyellowpad"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefPadYellow_L1 = playerSelection.getMaximumPoint();
-							this.spleefPadYellow_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_padSet, "yellow"), commandPlayer);
-							
-						}
-						else if (args[0].equalsIgnoreCase("setgreenpad"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefPadGreen_L1 = playerSelection.getMaximumPoint();
-							this.spleefPadGreen_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_padSet, "green"), commandPlayer);
-							
-						}
-						else if (args[0].equalsIgnoreCase("setredroom"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefRedRoom_L1 = playerSelection.getMaximumPoint();
-							this.spleefRedRoom_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_roomSet, "red"), commandPlayer);
-							
-						}
-						else if (args[0].equalsIgnoreCase("setblueroom"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefBlueRoom_L1 = playerSelection.getMaximumPoint();
-							this.spleefBlueRoom_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_roomSet, "blue"), commandPlayer);
-							
-						}
-						else if (args[0].equalsIgnoreCase("setyellowroom"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefYellowRoom_L1 = playerSelection.getMaximumPoint();
-							this.spleefYellowRoom_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_roomSet, "yellow"), commandPlayer);
-							
-						}
-						else if (args[0].equalsIgnoreCase("setgreenroom"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefGreenRoom_L1 = playerSelection.getMaximumPoint();
-							this.spleefGreenRoom_L2 = playerSelection.getMinimumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_roomSet, "green"), commandPlayer);
-							
-						}
-						else if (args[0].equalsIgnoreCase("setpre"))
-						{
-							this.spleefPreRoomPort = commandPlayer.getLocation();
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_roomPort, "lobby"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setredport"))
-						{
-							this.spleefRedRoomPort = commandPlayer.getLocation();
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_roomPort, "red"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setblueport"))
-						{
-							this.spleefBlueRoomPort = commandPlayer.getLocation();
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_roomPort, "blue"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setyellowport"))
-						{
-							this.spleefYellowRoomPort = commandPlayer.getLocation();
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_roomPort, "yellow"), commandPlayer);
-						}					
-						else if (args[0].equalsIgnoreCase("setgreenport"))
-						{
-							this.spleefGreenRoomPort = commandPlayer.getLocation();
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_roomPort, "green"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setgreenspectator"))
-						{
-							this.spleefSpectatorGreen = commandPlayer.getLocation();
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_spectatorPort, "green"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setredspectator"))
-						{
-							this.spleefSpectatorRed = commandPlayer.getLocation();
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_spectatorPort, "red"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setbluespectator"))
-						{
-							this.spleefSpectatorBlue = commandPlayer.getLocation();
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_spectatorPort, "blue"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setyellowspectator"))
-						{
-							this.spleefSpectatorYellow = commandPlayer.getLocation();
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_spectatorPort, "yellow"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("repair"))
-						{
-							this.rebuildFloor();
-							this.outputToPlayer(Constants.commandNotice_floorRepair, commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setsignscores"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefScoreBoardSign = playerSelection.getMaximumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_signSet, "scores"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setsignscoresextra"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefScoreBoardSignExtra = playerSelection.getMaximumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_signSet, "scores (extra)"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("setsignlatest"))
-						{
-							Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
-							this.spleefLatestWinsSign = playerSelection.getMaximumPoint();
-							
-							this.writeConfiguration();
-							this.outputToPlayer(String.format(Constants.commandNotice_signSet, "latest winners"), commandPlayer);
-						}
-						else if (args[0].equalsIgnoreCase("debug"))
-						{
-							this.debugger.toggleDebug(commandPlayer);
-							this.outputToPlayer("Debug toggled", commandPlayer);
+							if (args[0].equalsIgnoreCase("setarena"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								if (playerSelection != null)
+								{
+									this.spleefArena_L1 = playerSelection.getMaximumPoint();
+									this.spleefArena_L2 = playerSelection.getMinimumPoint();
+
+									this.writeConfiguration();
+									this.outputToPlayer(Constants.commandNotice_arenaSet, commandPlayer);
+								}
+							}
+							else if (args[0].equalsIgnoreCase("setnet"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								if (playerSelection != null)
+								{
+									this.spleefDropNet_L1 = playerSelection.getMaximumPoint();
+									this.spleefDropNet_L2 = playerSelection.getMinimumPoint();
+
+									this.writeConfiguration();
+									this.outputToPlayer(Constants.commandNotice_netSet, commandPlayer);
+								}
+							}
+							else if (args[0].equalsIgnoreCase("setredgate"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefRedGate_L1 = playerSelection.getMaximumPoint();
+								this.spleefRedGate_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_gateSet, "red"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setbluegate"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefBlueGate_L1 = playerSelection.getMaximumPoint();
+								this.spleefBlueGate_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_gateSet, "red"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setyellowgate"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefYellowGate_L1 = playerSelection.getMaximumPoint();
+								this.spleefYellowGate_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_gateSet, "red"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setgreengate"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefGreenGate_L1 = playerSelection.getMaximumPoint();
+								this.spleefGreenGate_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_gateSet, "red"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setredtrap"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefFloorTrapRed_L1 = playerSelection.getMaximumPoint();
+								this.spleefFloorTrapRed_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer("Red trap set", commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setbluetrap"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefFloorTrapBlue_L1 = playerSelection.getMaximumPoint();
+								this.spleefFloorTrapBlue_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer("Blue trap set", commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setgreentrap"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefFloorTrapGreen_L1 = playerSelection.getMaximumPoint();
+								this.spleefFloorTrapGreen_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer("Green trap set", commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setyellowtrap"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefFloorTrapYellow_L1 = playerSelection.getMaximumPoint();
+								this.spleefFloorTrapYellow_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer("Yellow trap set", commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setredpad"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefPadRed_L1 = playerSelection.getMaximumPoint();
+								this.spleefPadRed_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_padSet, "red"), commandPlayer);
+
+							}
+							else if (args[0].equalsIgnoreCase("setbluepad"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefPadBlue_L1 = playerSelection.getMaximumPoint();
+								this.spleefPadBlue_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_padSet, "blue"), commandPlayer);
+
+							}
+							else if (args[0].equalsIgnoreCase("setyellowpad"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefPadYellow_L1 = playerSelection.getMaximumPoint();
+								this.spleefPadYellow_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_padSet, "yellow"), commandPlayer);
+
+							}
+							else if (args[0].equalsIgnoreCase("setgreenpad"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefPadGreen_L1 = playerSelection.getMaximumPoint();
+								this.spleefPadGreen_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_padSet, "green"), commandPlayer);
+
+							}
+							else if (args[0].equalsIgnoreCase("setredroom"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefRedRoom_L1 = playerSelection.getMaximumPoint();
+								this.spleefRedRoom_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_roomSet, "red"), commandPlayer);
+
+							}
+							else if (args[0].equalsIgnoreCase("setblueroom"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefBlueRoom_L1 = playerSelection.getMaximumPoint();
+								this.spleefBlueRoom_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_roomSet, "blue"), commandPlayer);
+
+							}
+							else if (args[0].equalsIgnoreCase("setyellowroom"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefYellowRoom_L1 = playerSelection.getMaximumPoint();
+								this.spleefYellowRoom_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_roomSet, "yellow"), commandPlayer);
+
+							}
+							else if (args[0].equalsIgnoreCase("setgreenroom"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefGreenRoom_L1 = playerSelection.getMaximumPoint();
+								this.spleefGreenRoom_L2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_roomSet, "green"), commandPlayer);
+
+							}
+							else if (args[0].equalsIgnoreCase("setbounds"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefBounds_1 = playerSelection.getMaximumPoint();
+								this.spleefBounds_2 = playerSelection.getMinimumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer("Done yo shizzle, ma dizzle.", commandPlayer);
+
+							}
+							else if (args[0].equalsIgnoreCase("setpre"))
+							{
+								this.spleefPreRoomPort = commandPlayer.getLocation();
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_roomPort, "lobby"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setredport"))
+							{
+								this.spleefRedRoomPort = commandPlayer.getLocation();
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_roomPort, "red"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setblueport"))
+							{
+								this.spleefBlueRoomPort = commandPlayer.getLocation();
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_roomPort, "blue"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setyellowport"))
+							{
+								this.spleefYellowRoomPort = commandPlayer.getLocation();
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_roomPort, "yellow"), commandPlayer);
+							}					
+							else if (args[0].equalsIgnoreCase("setgreenport"))
+							{
+								this.spleefGreenRoomPort = commandPlayer.getLocation();
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_roomPort, "green"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setgreenspectator"))
+							{
+								this.spleefSpectatorGreen = commandPlayer.getLocation();
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_spectatorPort, "green"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setredspectator"))
+							{
+								this.spleefSpectatorRed = commandPlayer.getLocation();
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_spectatorPort, "red"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setbluespectator"))
+							{
+								this.spleefSpectatorBlue = commandPlayer.getLocation();
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_spectatorPort, "blue"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setyellowspectator"))
+							{
+								this.spleefSpectatorYellow = commandPlayer.getLocation();
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_spectatorPort, "yellow"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("repair"))
+							{
+								this.rebuildFloor();
+								this.outputToPlayer(Constants.commandNotice_floorRepair, commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setsignscores"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefScoreBoardSign = playerSelection.getMaximumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_signSet, "scores"), commandPlayer);
+							}//spleefGetScoreSign
+							else if (args[0].equalsIgnoreCase("setplayerboard"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefGetScoreSign = playerSelection.getMaximumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_signSet, "scores (get score sign)"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setsignscoresextra"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefScoreBoardSignExtra = playerSelection.getMaximumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_signSet, "scores (extra)"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("setsignlatest"))
+							{
+								Selection playerSelection = this.worldEdit.getSelection(commandPlayer);
+								this.spleefLatestWinsSign = playerSelection.getMaximumPoint();
+
+								this.writeConfiguration();
+								this.outputToPlayer(String.format(Constants.commandNotice_signSet, "latest winners"), commandPlayer);
+							}
+							else if (args[0].equalsIgnoreCase("debug"))
+							{
+								this.debugger.toggleDebug(commandPlayer);
+								this.outputToPlayer("Debug toggled", commandPlayer);
+							}
+							else
+							{
+								this.outputToPlayer(Constants.commandErrorNoCommand, (Player) sender);
+							}
 						}
 						else
-						{
-							this.outputToPlayer(Constants.commandErrorNoCommand, (Player) sender);
-						}
+						 {
+							 Player getThatPlayer = (Player) sender;
+							 getThatPlayer.teleport(this.spleefPreRoomPort);
+						 }
 					}
 				 }
 				 else
@@ -979,6 +1124,68 @@ public class SatingSpleefers extends JavaPlugin {
 		}, 40L);
 		
 		this.preGame = false;
+		this.removeGateFloors();
+	}
+	
+	public void removeGateFloors()
+	{
+		breakThemBlocks(this.getBlocks(this.spleefFloorTrapRed_L1, this.spleefFloorTrapRed_L2));
+		breakThemBlocks(this.getBlocks(this.spleefFloorTrapBlue_L1, this.spleefFloorTrapBlue_L2));
+		breakThemBlocks(this.getBlocks(this.spleefFloorTrapGreen_L1, this.spleefFloorTrapGreen_L2));
+		breakThemBlocks(this.getBlocks(this.spleefFloorTrapYellow_L1, this.spleefFloorTrapYellow_L2));
+	}
+	
+	private void breakThemBlocks(List<Block> blocks)
+	{
+		Iterator<Block> blockIT = blocks.iterator();
+		while (blockIT.hasNext())
+		{
+			Block theBlock = blockIT.next();
+			theBlock.setType(Material.AIR);
+			this.spleefedBlocks.add(theBlock.getLocation());
+		}
+	}
+	
+	private List<Block> getBlocks(Location first, Location second)
+	{
+		List<Block> returnBlocks = new ArrayList<Block>();
+		if (first.getX() > second.getX())
+		{
+			int currentX = (int) first.getX();
+			while (currentX > second.getX()-1)
+			{
+				returnBlocks.add(this.spleefArena_L1.getWorld().getBlockAt((int) currentX, (int) first.getY(),(int) first.getZ()));
+				currentX--;
+			}
+		}
+		else if (first.getX() < second.getX())
+		{
+			int currentX = (int) first.getX();
+			while (currentX < second.getX()+1)
+			{
+				returnBlocks.add(this.spleefArena_L1.getWorld().getBlockAt((int) currentX, (int) first.getY(),(int) first.getZ()));
+				currentX++;
+			}
+		}
+		else if (first.getZ() > second.getZ())
+		{
+			int currentZ = (int) first.getZ();
+			while (currentZ > second.getZ()-1)
+			{
+				returnBlocks.add(this.spleefArena_L1.getWorld().getBlockAt((int) first.getX(), (int) first.getY(), currentZ));
+				currentZ--;
+			}
+		}
+		else if (first.getZ() < second.getZ())
+		{
+			int currentZ = (int) first.getZ();
+			while (currentZ < second.getZ()+1)
+			{
+				returnBlocks.add(this.spleefArena_L1.getWorld().getBlockAt((int) first.getX(), (int) first.getY(), currentZ));
+				currentZ++;
+			}
+		}
+		return returnBlocks;
 	}
 	
 	public void checkInvalidLocations()
@@ -994,49 +1201,53 @@ public class SatingSpleefers extends JavaPlugin {
 					for (int i = 0; i < worldPlayers.size(); i++)
 					{
 						Player currentPlayer = worldPlayers.get(i);
-						
-						if (currentPlayer.getGameMode() != GameMode.CREATIVE)
-						{					
-							CuboidSelection arenaDropNet = new CuboidSelection(currentPlayer.getWorld(), this.spleefDropNet_L1, this.spleefDropNet_L2);
-							
-							if (arenaDropNet.contains(currentPlayer.getLocation())) //Falls under arena.
+					
+						CuboidSelection arenaDropNet = new CuboidSelection(currentPlayer.getWorld(), this.spleefDropNet_L1, this.spleefDropNet_L2);
+
+						if (arenaDropNet.contains(currentPlayer.getLocation())) //Falls under arena.
+						{
+							this.removePlayerFromArena(currentPlayer);
+						}
+
+						CuboidSelection arena = new CuboidSelection(currentPlayer.getWorld(), this.spleefArena_L1, this.spleefArena_L2);
+
+						if (arena.contains(currentPlayer.getLocation())) // Inside arena before a game started.
+						{
+							if (!this.gameInProgress && !this.preGame)
 							{
 								this.removePlayerFromArena(currentPlayer);
 							}
-							
-							CuboidSelection arena = new CuboidSelection(currentPlayer.getWorld(), this.spleefArena_L1, this.spleefArena_L2);
-							
-							if (arena.contains(currentPlayer.getLocation())) // Inside arena before a game started.
+							else
 							{
-								if (!this.gameInProgress && !this.preGame)
+								if (!this.currentPlayers.contains(currentPlayer.getEntityId()))
 								{
 									this.removePlayerFromArena(currentPlayer);
 								}
 							}
-							
-			    			CuboidSelection redRoom = new CuboidSelection(currentPlayer.getWorld(), this.spleefRedRoom_L1, this.spleefRedRoom_L2);
-			    			CuboidSelection blueRoom = new CuboidSelection(currentPlayer.getWorld(), this.spleefBlueRoom_L1, this.spleefBlueRoom_L2);
-			    			CuboidSelection yellowRoom = new CuboidSelection(currentPlayer.getWorld(), this.spleefYellowRoom_L1, this.spleefYellowRoom_L2);
-			    			CuboidSelection greenRoom = new CuboidSelection(currentPlayer.getWorld(), this.spleefGreenRoom_L1, this.spleefGreenRoom_L2);
-			    			
-			    			if (this.gameInProgress && !this.preGame)
-			    			if (redRoom.contains(currentPlayer.getLocation()))
-			    			{
-			    				this.removePlayerFromArena(currentPlayer);
-			    			}
-			    			else if (blueRoom.contains(currentPlayer.getLocation()))
-			    			{
-			    				this.removePlayerFromArena(currentPlayer);
-			    			}
-			    			else if (yellowRoom.contains(currentPlayer.getLocation()))
-			    			{
-			    				this.removePlayerFromArena(currentPlayer);
-			    			}
-			    			else if (greenRoom.contains(currentPlayer.getLocation()))
-			    			{
-			    				this.removePlayerFromArena(currentPlayer);
-			    			}
 						}
+
+						CuboidSelection redRoom = new CuboidSelection(currentPlayer.getWorld(), this.spleefRedRoom_L1, this.spleefRedRoom_L2);
+						CuboidSelection blueRoom = new CuboidSelection(currentPlayer.getWorld(), this.spleefBlueRoom_L1, this.spleefBlueRoom_L2);
+						CuboidSelection yellowRoom = new CuboidSelection(currentPlayer.getWorld(), this.spleefYellowRoom_L1, this.spleefYellowRoom_L2);
+						CuboidSelection greenRoom = new CuboidSelection(currentPlayer.getWorld(), this.spleefGreenRoom_L1, this.spleefGreenRoom_L2);
+
+						if (this.gameInProgress && !this.preGame)
+							if (redRoom.contains(currentPlayer.getLocation()))
+							{
+								this.removePlayerFromArena(currentPlayer);
+							}
+							else if (blueRoom.contains(currentPlayer.getLocation()))
+							{
+								this.removePlayerFromArena(currentPlayer);
+							}
+							else if (yellowRoom.contains(currentPlayer.getLocation()))
+							{
+								this.removePlayerFromArena(currentPlayer);
+							}
+							else if (greenRoom.contains(currentPlayer.getLocation()))
+							{
+								this.removePlayerFromArena(currentPlayer);
+							}
 					}
 				}
 			}
@@ -1049,9 +1260,13 @@ public class SatingSpleefers extends JavaPlugin {
 	
 	public void removePlayerFromArena(Player thePlayer)
 	{
-		this.debugger.debug("Removing " + thePlayer.getName() + " from the spleef arena");
-		this.currentPlayers.remove(thePlayer.getName());
-		thePlayer.teleport(this.spleefPreRoomPort);
+		if (!isSpleefOp(thePlayer))
+		{
+			this.debugger.debug("Trying to remove " + thePlayer.getName() + " from the spleef arena");
+			if (this.currentPlayers.contains(thePlayer.getEntityId()))
+				this.currentPlayers.remove((Object) thePlayer.getEntityId());
+			thePlayer.teleport(this.spleefPreRoomPort);
+		}
 	}
 	
 	public Location getLocationFromConfig(String key)
@@ -1124,6 +1339,21 @@ public class SatingSpleefers extends JavaPlugin {
 		this.writeConfigValue("dbUrl", this.url);
 		this.writeConfigValue("dbUser", this.user);
 		this.writeConfigValue("dbPassword", this.password);
+		this.writeConfigLocationValue("spleefGetScoreSign", this.spleefGetScoreSign);
+		this.writeConfigLocationValue("spleefBounds_1", this.spleefBounds_1);
+		this.writeConfigLocationValue("spleefBounds_2", this.spleefBounds_2);
+		
+		this.writeConfigLocationValue("spleefFloorTrapRed_L1", this.spleefFloorTrapRed_L1);
+		this.writeConfigLocationValue("spleefFloorTrapRed_L2", this.spleefFloorTrapRed_L2);
+		
+		this.writeConfigLocationValue("spleefFloorTrapBlue_L1", this.spleefFloorTrapBlue_L1);
+		this.writeConfigLocationValue("spleefFloorTrapBlue_L2", this.spleefFloorTrapBlue_L2);
+		
+		this.writeConfigLocationValue("spleefFloorTrapGreen_L1", this.spleefFloorTrapGreen_L1);
+		this.writeConfigLocationValue("spleefFloorTrapGreen_L2", this.spleefFloorTrapGreen_L2);
+		
+		this.writeConfigLocationValue("spleefFloorTrapYellow_L1", this.spleefFloorTrapYellow_L1);
+		this.writeConfigLocationValue("spleefFloorTrapYellow_L2", this.spleefFloorTrapYellow_L2);
 
 		this.saveConfig();
 	}
@@ -1173,6 +1403,21 @@ public class SatingSpleefers extends JavaPlugin {
 		this.url = getStringFromConfig("dbUrl");
 		this.user = getStringFromConfig("dbUser");
 		this.password = getStringFromConfig("dbPassword");
+		this.spleefGetScoreSign = getLocationFromConfig("spleefGetScoreSign");
+		this.spleefBounds_1 = getLocationFromConfig("spleefBounds_1");
+		this.spleefBounds_2 = getLocationFromConfig("spleefBounds_2");
+		
+		this.spleefFloorTrapRed_L1 = getLocationFromConfig("spleefFloorTrapRed_L1");
+		this.spleefFloorTrapRed_L2 = getLocationFromConfig("spleefFloorTrapRed_L2");
+		
+		this.spleefFloorTrapBlue_L1 = getLocationFromConfig("spleefFloorTrapBlue_L1");
+		this.spleefFloorTrapBlue_L2 = getLocationFromConfig("spleefFloorTrapBlue_L2");
+		
+		this.spleefFloorTrapGreen_L1 = getLocationFromConfig("spleefFloorTrapGreen_L1");
+		this.spleefFloorTrapGreen_L2 = getLocationFromConfig("spleefFloorTrapGreen_L2");
+		
+		this.spleefFloorTrapYellow_L1 = getLocationFromConfig("spleefFloorTrapYellow_L1");
+		this.spleefFloorTrapYellow_L2 = getLocationFromConfig("spleefFloorTrapYellow_L2");
 	}
 
 	public void outputToConsole(String messageText, Level messageLevel)

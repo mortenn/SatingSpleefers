@@ -47,4 +47,6 @@ public class Constants {
 	public static String debug_endedGame = "Ended the game";
 	public static String debug_initGame = "Setting up new game and queing it.";
 	
+	public static String spleefCastPlayerScore = "You have won %s spleef matches.";
+	
 }

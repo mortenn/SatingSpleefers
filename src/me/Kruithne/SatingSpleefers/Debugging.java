@@ -3,12 +3,19 @@ package me.Kruithne.SatingSpleefers;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.logging.Logger;
 
 import org.bukkit.entity.Player;
 
 public class Debugging {
 
 	private List<Player> debugListeners = new ArrayList<Player>();
+	//private Logger log = null;
+	
+	Debugging(Logger log)
+	{
+		//this.log = log;
+	}
 	
 	public void addDebugListener(Player player)
 	{
@@ -46,6 +53,7 @@ public class Debugging {
 		{
 			this.debugToPlayer(message, debugListenersIterator.next());
 		}
+		//this.log.log(Level.INFO, message);
 	}
 	
 	private void debugToPlayer(String message, Player player)

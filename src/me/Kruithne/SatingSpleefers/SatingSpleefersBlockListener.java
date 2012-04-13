@@ -1,10 +1,11 @@
 package me.Kruithne.SatingSpleefers;
 
-import org.bukkit.GameMode;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+
+import com.sk89q.worldedit.bukkit.selections.CuboidSelection;
 
 public class SatingSpleefersBlockListener implements Listener
 {
@@ -19,9 +20,14 @@ public class SatingSpleefersBlockListener implements Listener
 	@EventHandler
 	public boolean onBlockBreak(BlockBreakEvent event)
 	{
-		if (event.getPlayer().getWorld() == this.rPlugin.spleefArena_L1.getWorld() && event.getPlayer().getGameMode() != GameMode.CREATIVE)
+		if (event.getPlayer().getWorld() == this.rPlugin.spleefArena_L1.getWorld() && !this.rPlugin.isSpleefOp(event.getPlayer()))
 		{
-			event.setCancelled(true);
+			CuboidSelection arena = new CuboidSelection(this.rPlugin.spleefBounds_1.getWorld(), this.rPlugin.spleefBounds_1, this.rPlugin.spleefBounds_2);
+			
+			if (arena.contains(event.getBlock().getLocation()))
+			{
+				event.setCancelled(true);	
+			}
 		}
 		return true;
 	}
@@ -29,9 +35,14 @@ public class SatingSpleefersBlockListener implements Listener
 	@EventHandler
 	public boolean onBlockPlace(BlockPlaceEvent event)
 	{
-		if (event.getPlayer().getWorld() == this.rPlugin.spleefArena_L1.getWorld() && event.getPlayer().getGameMode() != GameMode.CREATIVE)
+		if (event.getPlayer().getWorld() == this.rPlugin.spleefArena_L1.getWorld() && !this.rPlugin.isSpleefOp(event.getPlayer()))
 		{
-			event.setCancelled(true);
+			CuboidSelection arena = new CuboidSelection(this.rPlugin.spleefBounds_1.getWorld(), this.rPlugin.spleefBounds_1, this.rPlugin.spleefBounds_2);
+			
+			if (arena.contains(event.getBlock().getLocation()))
+			{
+				event.setCancelled(true);	
+			}
 		}
 		return true;
 	}
