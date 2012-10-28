@@ -1,0 +1,9 @@
+<component name="ArtifactManager">
+  <artifact type="jar" build-on-make="true" name="SatingSpleefers">
+    <output-path>$PROJECT_DIR$/../out/SatingSpleefers</output-path>
+    <root id="archive" name="SatingSpleefers.jar">
+      <element id="module-output" name="SatingSpleefers" />
+      <element id="file-copy" path="$PROJECT_DIR$/plugin.yml" />
+    </root>
+  </artifact>
+</component>
